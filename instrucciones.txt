@@ -1,0 +1,988 @@
+# MVP — Generador de Rutinas de Gym con LLM Local
+
+## Objetivo
+
+Construir un MVP local para validar si un LLM pequeño ejecutándose localmente puede generar rutinas de entrenamiento de buena calidad utilizando como fuente de ejercicios el siguiente repositorio:
+
+https://github.com/hasaneyldrm/exercises-dataset
+
+El repositorio contiene aproximadamente 1,324 ejercicios con información como nombre, grupo muscular, músculos objetivo/secundarios, equipamiento, dificultad, instrucciones y recursos visuales.
+
+**IMPORTANTE:** En esta fase NO quiero construir todavía la aplicación web completa.
+
+El objetivo es probar exclusivamente el núcleo de generación:
+
+```text
+Parámetros del usuario
+        ↓
+Dataset de ejercicios
+        ↓
+Filtrado de ejercicios
+        ↓
+Selección de candidatos
+        ↓
+LLM local
+        ↓
+JSON estructurado
+        ↓
+Validación
+        ↓
+Rutina
+```
+
+---
+
+# 1. Stack del MVP
+
+Utilizar:
+
+* Python 3.11+
+* Ollama para ejecutar el LLM localmente
+* SQLite para persistencia local
+* Pydantic para validar los datos y la respuesta del LLM
+* SQLAlchemy si resulta conveniente
+* El dataset de GitHub como fuente inicial de ejercicios
+
+No utilizar todavía:
+
+* Next.js
+* PostgreSQL
+* Docker
+* Coolify
+* Redis
+* Vector database
+* RAG
+* autenticación
+* sistema de usuarios
+* pagos
+* despliegue
+
+La prioridad es validar la generación.
+
+---
+
+# 2. Estructura inicial del proyecto
+
+Crear una estructura similar a:
+
+```text
+gym-ai-mvp/
+│
+├── data/
+│   ├── raw/
+│   │   └── ...
+│   └── app.db
+│
+├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── database.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── dataset_loader.py
+│   ├── exercise_filter.py
+│   ├── workout_generator.py
+│   ├── prompt_builder.py
+│   ├── llm.py
+│   └── validator.py
+│
+├── tests/
+│   ├── test_dataset.py
+│   ├── test_filter.py
+│   └── test_generator.py
+│
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+La estructura puede modificarse si existe una razón técnica, pero mantener el proyecto sencillo.
+
+---
+
+# 3. Primera tarea: inspeccionar el dataset
+
+Antes de escribir el generador, analizar el repositorio:
+
+```text
+https://github.com/hasaneyldrm/exercises-dataset
+```
+
+Determinar:
+
+1. Qué archivos contienen los ejercicios.
+2. Qué formato utilizan.
+3. Qué campos existen.
+4. Cómo están representados:
+
+   * nombre
+   * grupo muscular
+   * músculo objetivo
+   * músculos secundarios
+   * equipamiento
+   * dificultad
+   * instrucciones
+   * idioma
+   * imágenes
+   * GIFs
+5. Si existen IDs únicos.
+6. Si existen duplicados.
+7. Cómo están representados los idiomas.
+
+**No asumir la estructura del dataset. Inspeccionarla primero.**
+
+Crear un script que pueda importar el dataset a SQLite.
+
+---
+
+# 4. Modelo interno de Exercise
+
+Crear un modelo interno normalizado.
+
+Como referencia:
+
+```python
+Exercise(
+    id,
+    name,
+    muscle_group,
+    target_muscle,
+    secondary_muscles,
+    equipment,
+    difficulty,
+    instructions,
+    thumbnail_url,
+    gif_url
+)
+```
+
+Los campos pueden adaptarse a los datos reales del repositorio.
+
+La prioridad es que el modelo interno sea consistente aunque el dataset original tenga nombres o estructuras diferentes.
+
+---
+
+# 5. Base de datos SQLite
+
+Crear una base SQLite local.
+
+Tabla principal:
+
+```text
+exercises
+```
+
+Debe contener los ejercicios normalizados.
+
+No almacenar inicialmente las imágenes/GIFs físicamente si no es necesario.
+
+Guardar sus referencias/URLs.
+
+Crear un comando o script:
+
+```bash
+python -m src.dataset_loader
+```
+
+que:
+
+1. lea el dataset original;
+2. normalice los datos;
+3. elimine duplicados cuando corresponda;
+4. inserte los ejercicios en SQLite;
+5. muestre estadísticas.
+
+Ejemplo:
+
+```text
+Dataset importado correctamente
+
+Ejercicios originales: 1324
+Ejercicios importados: 1324
+Duplicados: 0
+
+Grupos musculares:
+Chest: 120
+Back: 180
+Legs: ...
+...
+```
+
+Las cifras anteriores son solamente un ejemplo. Utilizar los valores reales.
+
+---
+
+# 6. Parámetros del usuario
+
+El MVP debe aceptar inicialmente estos parámetros:
+
+```text
+goal
+level
+days_per_week
+session_duration_minutes
+equipment
+```
+
+Ejemplo:
+
+```json
+{
+  "goal": "hypertrophy",
+  "level": "intermediate",
+  "days_per_week": 4,
+  "session_duration_minutes": 60,
+  "equipment": ["full_gym"]
+}
+```
+
+Los objetivos iniciales deben contemplar:
+
+```text
+strength
+hypertrophy
+power
+endurance
+general_fitness
+```
+
+Los niveles:
+
+```text
+beginner
+intermediate
+advanced
+```
+
+---
+
+# 7. Filtrado de ejercicios
+
+NO enviar los 1,324 ejercicios al LLM.
+
+Crear una función:
+
+```python
+get_exercise_candidates(preferences)
+```
+
+que consulte SQLite y reduzca el conjunto.
+
+El filtrado debe considerar al menos:
+
+* equipamiento;
+* dificultad;
+* compatibilidad general con el objetivo.
+
+Ejemplo conceptual:
+
+```text
+1324 ejercicios
+      ↓
+filtro de equipamiento
+      ↓
+filtro de dificultad
+      ↓
+filtro por objetivo
+      ↓
+candidatos
+```
+
+El resultado debería ser un conjunto manejable.
+
+No establecer arbitrariamente "siempre 50 ejercicios".
+
+El sistema debe seleccionar una cantidad razonable dependiendo de:
+
+* días;
+* objetivo;
+* grupos musculares necesarios;
+* disponibilidad de ejercicios.
+
+---
+
+# 8. No utilizar todavía embeddings
+
+Para este MVP NO utilizar:
+
+* Pinecone
+* Qdrant
+* Chroma
+* FAISS
+* embeddings
+* RAG
+
+Primero probar filtrado tradicional mediante SQLite.
+
+El dataset solo tiene alrededor de 1,324 ejercicios, por lo que SQL + reglas debería ser suficiente para el primer experimento.
+
+---
+
+# 9. El LLM
+
+Utilizar Ollama.
+
+El modelo debe ser pequeño porque eventualmente la aplicación se ejecutará en un VPS con:
+
+```text
+2 vCPU
+8 GB RAM
+100 GB NVMe
+```
+
+Para el MVP, permitir que el modelo sea configurable mediante una variable:
+
+```env
+OLLAMA_MODEL=...
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+No asumir que un modelo concreto es necesariamente el mejor.
+
+La arquitectura debe permitir cambiar fácilmente el modelo.
+
+---
+
+# 10. Prompt del LLM
+
+Crear un módulo independiente:
+
+```text
+prompt_builder.py
+```
+
+El prompt debe contener:
+
+### Preferencias
+
+```text
+Objetivo:
+Nivel:
+Días:
+Duración:
+Equipamiento:
+```
+
+### Ejercicios disponibles
+
+Solo incluir los candidatos seleccionados.
+
+Cada ejercicio debería representarse de forma compacta:
+
+```text
+ID: 237
+Nombre: Barbell Bench Press
+Grupo muscular: chest
+Músculo objetivo: chest
+Equipamiento: barbell
+Dificultad: intermediate
+```
+
+No enviar inicialmente las instrucciones completas de cada ejercicio.
+
+Tampoco enviar GIFs o imágenes.
+
+---
+
+# 11. Regla crítica del LLM
+
+El modelo debe recibir esta instrucción:
+
+```text
+UTILIZA ÚNICAMENTE LOS EJERCICIOS PROPORCIONADOS.
+
+NO INVENTES EJERCICIOS.
+
+CADA EJERCICIO DEBE SER REFERENCIADO MEDIANTE SU exercise_id.
+```
+
+Nunca permitir que el modelo invente nombres de ejercicios como fuente de verdad.
+
+---
+
+# 12. Respuesta del LLM
+
+La respuesta debe ser exclusivamente JSON.
+
+Formato inicial:
+
+```json
+{
+  "name": "Hipertrofia - 4 días",
+  "days": [
+    {
+      "day": 1,
+      "name": "Pecho y tríceps",
+      "exercises": [
+        {
+          "exercise_id": 237,
+          "sets": 4,
+          "reps": "8-10",
+          "rest_seconds": 120
+        }
+      ]
+    }
+  ]
+}
+```
+
+Definir schemas Pydantic para:
+
+```text
+Workout
+WorkoutDay
+WorkoutExercise
+```
+
+---
+
+# 13. Validación
+
+Crear un validador después del LLM.
+
+Pipeline:
+
+```text
+LLM
+ ↓
+JSON
+ ↓
+Pydantic
+ ↓
+validación de negocio
+ ↓
+Workout
+```
+
+Validar:
+
+### JSON
+
+* JSON válido.
+
+### Ejercicios
+
+* `exercise_id` existe.
+* El ejercicio pertenece al conjunto de candidatos proporcionados.
+* No existen IDs inventados.
+
+### Rutina
+
+* número correcto de días;
+* ejercicios presentes en cada día;
+* sets positivos;
+* repeticiones válidas;
+* descansos razonables.
+
+No hacer todavía reglas extremadamente complejas.
+
+La primera versión debe ser sencilla.
+
+---
+
+# 14. Si el LLM falla
+
+Si devuelve:
+
+```text
+JSON inválido
+```
+
+o un ejercicio inexistente:
+
+```text
+exercise_id inválido
+```
+
+el sistema debe:
+
+1. registrar el error;
+2. mostrarlo claramente durante el MVP;
+3. permitir una segunda generación.
+
+No ocultar silenciosamente los errores.
+
+Queremos observar cómo se comporta el modelo.
+
+---
+
+# 15. CLI para probar el MVP
+
+Crear una interfaz de consola.
+
+Ejemplo:
+
+```bash
+python -m src.main
+```
+
+Debe preguntar:
+
+```text
+¿Qué deseas entrenar?
+1. Fuerza
+2. Hipertrofia
+3. Potencia
+4. Resistencia
+5. Fitness general
+
+Nivel:
+1. Básico
+2. Intermedio
+3. Avanzado
+
+Días por semana: 4
+
+Duración por sesión: 60
+
+Equipamiento:
+1. Gimnasio completo
+2. Casa
+3. Mancuernas
+4. Peso corporal
+```
+
+Después:
+
+```text
+Buscando ejercicios compatibles...
+
+Ejercicios encontrados: 83
+
+Enviando candidatos al LLM...
+
+Generando rutina...
+```
+
+Y mostrar la rutina generada.
+
+---
+
+# 16. También guardar el resultado
+
+Guardar cada generación en:
+
+```text
+data/generations/
+```
+
+Ejemplo:
+
+```text
+generation_2026-09-01_163000.json
+```
+
+Guardar:
+
+```json
+{
+  "preferences": {},
+  "candidate_exercises": [],
+  "model": "...",
+  "prompt": "...",
+  "response": {},
+  "validation": {},
+  "timestamp": "..."
+}
+```
+
+Esto es muy importante porque queremos poder analizar posteriormente:
+
+* qué ejercicios recibió el modelo;
+* qué prompt recibió;
+* qué respondió;
+* qué errores cometió.
+
+---
+
+# 17. Pruebas iniciales
+
+Crear al menos 10 casos de prueba.
+
+Ejemplos:
+
+### Caso 1
+
+```text
+Objetivo: hipertrofia
+Nivel: básico
+Días: 3
+Duración: 45
+Equipo: gimnasio
+```
+
+### Caso 2
+
+```text
+Objetivo: hipertrofia
+Nivel: intermedio
+Días: 4
+Duración: 60
+Equipo: gimnasio
+```
+
+### Caso 3
+
+```text
+Objetivo: fuerza
+Nivel: intermedio
+Días: 4
+Duración: 60
+Equipo: gimnasio
+```
+
+### Caso 4
+
+```text
+Objetivo: potencia
+Nivel: avanzado
+Días: 3
+Duración: 60
+Equipo: gimnasio
+```
+
+### Caso 5
+
+```text
+Objetivo: fitness general
+Nivel: básico
+Días: 3
+Duración: 45
+Equipo: casa
+```
+
+etc.
+
+---
+
+# 18. Qué queremos evaluar
+
+No evaluar solamente si el programa funciona.
+
+Queremos evaluar la calidad del LLM.
+
+Para cada generación analizar:
+
+### Estructura
+
+* ¿JSON válido?
+* ¿Número correcto de días?
+* ¿Número razonable de ejercicios?
+
+### Fidelidad
+
+* ¿Utilizó solamente ejercicios disponibles?
+* ¿Inventó algún ejercicio?
+* ¿Usó correctamente los IDs?
+
+### Preferencias
+
+* ¿Respeta el objetivo?
+* ¿Respeta el nivel?
+* ¿Respeta el equipamiento?
+* ¿Respeta aproximadamente la duración?
+
+### Calidad
+
+Evaluación manual:
+
+```text
+1 = muy mala
+2 = mala
+3 = aceptable
+4 = buena
+5 = excelente
+```
+
+---
+
+# 19. Importante: no intentar resolver todo todavía
+
+En este MVP NO implementar todavía:
+
+* login;
+* usuarios;
+* perfiles;
+* historial web;
+* seguimiento de peso;
+* progreso;
+* calendario;
+* notificaciones;
+* pagos;
+* suscripciones;
+* administración;
+* frontend completo;
+* despliegue;
+* Coolify;
+* PostgreSQL;
+* RAG;
+* fine-tuning.
+
+Todo eso vendrá después.
+
+El objetivo actual es exclusivamente:
+
+```text
+¿Podemos obtener buenas rutinas con un LLM pequeño?
+```
+
+---
+
+# 20. Arquitectura del MVP
+
+La arquitectura final de esta fase debe ser:
+
+```text
+              CLI
+               │
+               ▼
+       ┌─────────────────┐
+       │ Preferences     │
+       └────────┬────────┘
+                │
+                ▼
+       ┌─────────────────┐
+       │ Exercise Filter │
+       └────────┬────────┘
+                │
+                ▼
+       ┌─────────────────┐
+       │ SQLite          │
+       │ 1,324 exercises │
+       └────────┬────────┘
+                │
+          candidates
+                │
+                ▼
+       ┌─────────────────┐
+       │ Prompt Builder   │
+       └────────┬────────┘
+                │
+                ▼
+       ┌─────────────────┐
+       │ Ollama           │
+       │ Small LLM        │
+       └────────┬────────┘
+                │
+                ▼
+       ┌─────────────────┐
+       │ Pydantic         │
+       │ Validator        │
+       └────────┬────────┘
+                │
+                ▼
+             Workout
+```
+
+---
+
+# 21. Principio arquitectónico importante
+
+Separar claramente estas responsabilidades:
+
+```text
+Dataset
+    ↓
+Database
+    ↓
+Filtering
+    ↓
+Prompt
+    ↓
+LLM
+    ↓
+Validation
+```
+
+El LLM NO debe encargarse de:
+
+* buscar ejercicios;
+* comprobar si existen;
+* conocer la base de datos completa;
+* decidir si un ID existe.
+
+El LLM solamente debe **construir una rutina utilizando los candidatos proporcionados**.
+
+---
+
+# 22. Preparar el proyecto para la siguiente fase
+
+Aunque todavía no se utilicen, diseñar las funciones de manera que posteriormente puedan cambiarse:
+
+```text
+SQLite → PostgreSQL
+
+CLI → FastAPI
+
+Ollama local → Ollama en VPS
+
+MVP → Next.js
+
+Local → Docker/Coolify
+```
+
+No acoplar la lógica de generación a la CLI.
+
+Por ejemplo:
+
+```python
+generate_workout(preferences)
+```
+
+debe poder utilizarse posteriormente desde:
+
+```text
+CLI
+FastAPI
+tests
+```
+
+---
+
+# 23. Orden de implementación
+
+Implementar estrictamente en este orden:
+
+### Paso 1
+
+Inspeccionar el dataset real.
+
+### Paso 2
+
+Crear el importador.
+
+### Paso 3
+
+Crear SQLite.
+
+### Paso 4
+
+Normalizar los ejercicios.
+
+### Paso 5
+
+Crear filtros.
+
+### Paso 6
+
+Probar filtros sin LLM.
+
+### Paso 7
+
+Instalar/configurar Ollama.
+
+### Paso 8
+
+Crear prompt builder.
+
+### Paso 9
+
+Generar primera rutina.
+
+### Paso 10
+
+Crear schemas Pydantic.
+
+### Paso 11
+
+Crear validador.
+
+### Paso 12
+
+Guardar generaciones.
+
+### Paso 13
+
+Crear los 10 casos de prueba.
+
+### Paso 14
+
+Comparar resultados y evaluar la calidad del modelo.
+
+---
+
+# 24. Regla de desarrollo
+
+No avanzar a la siguiente fase si la anterior no funciona.
+
+Especialmente:
+
+```text
+Dataset
+  ↓
+¿Los datos son correctos?
+  ↓ sí
+
+Filtro
+  ↓
+¿Selecciona buenos candidatos?
+  ↓ sí
+
+LLM
+  ↓
+¿Genera una rutina razonable?
+  ↓ sí
+
+Validator
+  ↓
+¿Detecta errores?
+  ↓ sí
+
+MVP terminado
+```
+
+---
+
+# Resultado esperado
+
+Al finalizar este MVP debo poder ejecutar:
+
+```bash
+python -m src.main
+```
+
+introducir:
+
+```text
+Objetivo: Hipertrofia
+Nivel: Intermedio
+Días: 4
+Duración: 60 minutos
+Equipamiento: Gimnasio completo
+```
+
+y obtener algo como:
+
+```text
+=================================
+RUTINA: HIPERTROFIA - 4 DÍAS
+=================================
+
+DÍA 1 — PECHO / HOMBROS / TRÍCEPS
+
+1. Barbell Bench Press
+   4 × 6-8
+   Descanso: 150s
+
+2. Incline Dumbbell Press
+   3 × 8-10
+   Descanso: 120s
+
+...
+
+DÍA 2 — ESPALDA / BÍCEPS
+
+...
+
+=================================
+
+Modelo: [modelo utilizado]
+Ejercicios candidatos: 47
+Ejercicios utilizados: 24
+Validación: OK
+=================================
+```
+
+Y simultáneamente guardar toda la información de la generación para poder analizar posteriormente el comportamiento del modelo.
+
+**La prioridad absoluta del MVP es descubrir qué tan bien funciona un LLM pequeño con este dataset y con nuestro sistema de filtrado.**

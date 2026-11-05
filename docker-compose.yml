@@ -1,0 +1,41 @@
+# Deploy with Coolify (Docker Compose build pack) or locally: docker compose up --build
+#
+# Required variables (set them in Coolify > Environment Variables):
+#   NEXT_PUBLIC_API_URL  public URL of the API,      e.g. https://api.tudominio.com
+#   CORS_ORIGINS         public URL of the frontend, e.g. https://tudominio.com
+#   LLM_API_URL / LLM_API_KEY, or OLLAMA_BASE_URL + OLLAMA_MODEL
+services:
+  api:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to the frontend public URL}
+      LLM_API_URL: ${LLM_API_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-300}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      EXERCISES_DATASET_URL: ${EXERCISES_DATASET_URL:-https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/data/exercises.json}
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/main/}
+    volumes:
+      - gym_data:/app/data
+    expose:
+      - "8001"
+
+  web:
+    build:
+      context: ./front
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL to the API public URL}
+    restart: unless-stopped
+    depends_on:
+      - api
+    expose:
+      - "3000"
+
+volumes:
+  gym_data:
