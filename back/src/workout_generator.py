@@ -50,7 +50,9 @@ def generate_workout(preferences: Preferences, max_attempts: int = MAX_ATTEMPTS)
     for attempt in range(1, max_attempts + 1):
         raw_response = ""
         try:
-            raw_response = generate_workout_json(prompt)
+            raw_response = generate_workout_json(
+                prompt, candidate_ids=[exercise.id for exercise in candidates]
+            )
             workout, errors = validate_workout(raw_response, preferences, candidates)
         except Exception as exc:  # LLM/connection failures are also part of what we observe
             workout, errors = None, [f"Error llamando al LLM: {exc}"]

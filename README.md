@@ -112,7 +112,8 @@ En Coolify:
 2. Asigna **un solo dominio**, al servicio `web` → `https://tudominio.com` (puerto 3000).
    El servicio `api` no lleva dominio: el frontend reenvía `/api/*` a `http://api:8001`
    por la red interna de Docker (`BACKEND_URL`, build arg de `front/Dockerfile`).
-3. Variables de entorno: `LLM_API_URL`, `LLM_API_KEY` (o `OLLAMA_BASE_URL` + `OLLAMA_MODEL`).
+3. Variables de entorno: `OPENAI_API_KEY` (y opcional `OPENAI_MODEL`, por defecto `gpt-5-nano`).
+   Orden de proveedores: OpenAI → `LLM_API_URL`/`LLM_API_KEY` → Ollama (`OLLAMA_BASE_URL` + `OLLAMA_MODEL`).
    No hacen falta `CORS_ORIGINS` ni `NEXT_PUBLIC_API_URL`.
 4. El volumen `gym_data` persiste la base SQLite y las generaciones. Para reimportar el
    dataset define `FORCE_DATASET_IMPORT=1` en un despliegue.
