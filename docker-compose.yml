@@ -1,8 +1,7 @@
 # Deploy with Coolify (Docker Compose build pack) or locally: docker compose up --build
 #
-# Required variables (set them in Coolify > Environment Variables):
-#   NEXT_PUBLIC_API_URL  public URL of the API,      e.g. https://api.tudominio.com
-#   CORS_ORIGINS         public URL of the frontend, e.g. https://tudominio.com
+# Only `web` is public (assign your domain to it in Coolify, port 3000); it proxies /api/* to `api`.
+# Variables to set (Coolify > Environment Variables):
 #   LLM_API_URL / LLM_API_KEY, or OLLAMA_BASE_URL + OLLAMA_MODEL
 services:
   api:
@@ -11,7 +10,6 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to the frontend public URL}
       LLM_API_URL: ${LLM_API_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
@@ -29,8 +27,6 @@ services:
     build:
       context: ./front
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL to the API public URL}
     restart: unless-stopped
     depends_on:
       - api

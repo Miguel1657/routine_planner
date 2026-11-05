@@ -8,11 +8,10 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# NEXT_PUBLIC_* values are inlined into the browser bundle at build time,
-# so the public API URL must be provided as a build argument.
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
-    NEXT_TELEMETRY_DISABLED=1
+# next.config.ts rewrites /api/* to the backend; rewrites are fixed at build time.
+# "api" is the compose service name, reachable only on the internal Docker network.
+ARG BACKEND_URL=http://api:8001
+ENV BACKEND_URL=$BACKEND_URL NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:22-alpine AS runner

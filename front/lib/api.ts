@@ -38,13 +38,11 @@ export class ApiError extends Error {
   }
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
-
 export async function generateWorkout(
   preferences: Preferences,
   signal?: AbortSignal,
 ): Promise<GenerateResponse> {
-  const response = await fetch(`${API_URL}/api/generate`, {
+  const response = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(preferences),

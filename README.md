@@ -74,9 +74,8 @@ uvicorn src.api:app --reload --port 8001
 
 # 2) Frontend
 cd front
-copy .env.local.example .env.local
 npm install
-npm run dev        # http://localhost:3000
+npm run dev        # http://localhost:3000 (proxy /api/* -> http://localhost:8001)
 ```
 
 Flujo: botón **Iniciar** → 5 preguntas (objetivo, nivel, días, duración, equipo) →
@@ -110,11 +109,10 @@ Local: `docker compose --env-file back/.env up --build` (con las variables de `b
 
 En Coolify:
 1. New Resource → repositorio → Build Pack **Docker Compose** (`docker-compose.yml`).
-2. Asigna dominios: servicio `web` → `https://tudominio.com` (puerto 3000) y servicio
-   `api` → `https://api.tudominio.com` (puerto 8001).
-3. Variables de entorno: `NEXT_PUBLIC_API_URL=https://api.tudominio.com`,
-   `CORS_ORIGINS=https://tudominio.com`, `LLM_API_URL`, `LLM_API_KEY`
-   (o `OLLAMA_BASE_URL` + `OLLAMA_MODEL`). Marca `NEXT_PUBLIC_API_URL` como disponible en
-   build time; si la cambias, hay que reconstruir el servicio `web` (carpeta `front/`).
+2. Asigna **un solo dominio**, al servicio `web` → `https://tudominio.com` (puerto 3000).
+   El servicio `api` no lleva dominio: el frontend reenvía `/api/*` a `http://api:8001`
+   por la red interna de Docker (`BACKEND_URL`, build arg de `front/Dockerfile`).
+3. Variables de entorno: `LLM_API_URL`, `LLM_API_KEY` (o `OLLAMA_BASE_URL` + `OLLAMA_MODEL`).
+   No hacen falta `CORS_ORIGINS` ni `NEXT_PUBLIC_API_URL`.
 4. El volumen `gym_data` persiste la base SQLite y las generaciones. Para reimportar el
    dataset define `FORCE_DATASET_IMPORT=1` en un despliegue.
