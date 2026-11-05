@@ -20,8 +20,9 @@ _GOAL_GUIDANCE = {
 # adjusts overall volume/complexity guidance given to the model.
 _LEVEL_GUIDANCE = {
     Level.BEGINNER: (
-        "Beginner: favor simpler, more stable movements from the list, moderate volume, "
-        "and be conservative with total exercises per day."
+        "Beginner: use only basic, stable movements (machines, cables, dumbbells, simple "
+        "bodyweight). No Olympic lifts or gymnastic skills; prefer machine/dumbbell variations "
+        "over barbell ones. Moderate volume; be conservative with total exercises per day."
     ),
     Level.INTERMEDIATE: "Intermediate: normal volume and exercise variety.",
     Level.ADVANCED: (
